@@ -4,7 +4,7 @@ import { getTenant } from "@/lib/tenant";
 import { requestOtp, verifyOtp } from "@/lib/otp";
 import { createSession, upsertUserByPhone, ensureMembership } from "@/lib/auth";
 
-export type ActionState = { ok: boolean; error?: string; step?: "otp" };
+export type ActionState = { ok: boolean; error?: string; step?: "otp"; demoCode?: string };
 
 function normalizePhone(raw: string): string | null {
   const digits = raw.replace(/[^\d+]/g, "");
@@ -22,8 +22,8 @@ export async function requestOtpAction(
   const phone = normalizePhone(String(formData.get("phone") ?? ""));
   if (!phone) return { ok: false, error: "Enter a valid phone number." };
 
-  await requestOtp(phone, "LOGIN", tenant?.id ?? null);
-  return { ok: true, step: "otp" };
+  const { demoCode } = await requestOtp(phone, "LOGIN", tenant?.id ?? null);
+  return { ok: true, step: "otp", demoCode };
 }
 
 export async function verifyOtpAction(

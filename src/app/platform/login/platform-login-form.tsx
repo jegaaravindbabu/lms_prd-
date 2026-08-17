@@ -23,11 +23,12 @@ export function PlatformLoginForm() {
   const [step, setStep] = useState<"phone" | "otp">("phone");
   const [phone, setPhone] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [demoCode, setDemoCode] = useState<string | null>(null);
 
   async function onRequest(formData: FormData) {
     setError(null);
     const res: PlatformActionState = await requestPlatformOtp({ ok: false }, formData);
-    if (res.ok && res.step === "otp") { setPhone(String(formData.get("phone") ?? "")); setStep("otp"); }
+    if (res.ok && res.step === "otp") { setPhone(String(formData.get("phone") ?? "")); setDemoCode(res.demoCode ?? null); setStep("otp"); }
     else setError(res.error ?? "Something went wrong.");
   }
 
@@ -63,6 +64,12 @@ export function PlatformLoginForm() {
           <Input id="code" name="code" inputMode="numeric" placeholder="6-digit code" className="pl-11 tracking-[0.5em]" maxLength={6} required autoFocus />
         </div>
         <p className="text-xs text-muted-foreground">In dev, the code prints to the server log.</p>
+        {demoCode && (
+          <div className="flex items-center justify-between rounded-xl border border-gold/25 bg-gold/5 px-4 py-2.5">
+            <span className="text-xs text-muted-foreground">Demo code</span>
+            <span className="font-display text-lg tracking-[0.3em] text-gold">{demoCode}</span>
+          </div>
+        )}
       </div>
       {error && <p className="text-sm text-red-400">{error}</p>}
       <Submit label="Enter console" />

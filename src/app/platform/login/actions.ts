@@ -4,7 +4,7 @@ import { requestOtp, verifyOtp } from "@/lib/otp";
 import { prismaAdmin } from "@/lib/db";
 import { createSession } from "@/lib/auth";
 
-export type PlatformActionState = { ok: boolean; error?: string; step?: "otp" };
+export type PlatformActionState = { ok: boolean; error?: string; step?: "otp"; demoCode?: string };
 
 function normalizePhone(raw: string): string | null {
   const digits = raw.replace(/[^\d+]/g, "");
@@ -24,8 +24,8 @@ export async function requestPlatformOtp(_prev: PlatformActionState, formData: F
     return { ok: false, error: "This number isn't a platform administrator." };
   }
 
-  await requestOtp(phone, "LOGIN", null);
-  return { ok: true, step: "otp" };
+  const { demoCode } = await requestOtp(phone, "LOGIN", null);
+  return { ok: true, step: "otp", demoCode };
 }
 
 export async function verifyPlatformOtp(_prev: PlatformActionState, formData: FormData): Promise<PlatformActionState> {

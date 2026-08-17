@@ -5,6 +5,7 @@
   "description": "White-Label Multi-Tenant LMS — Next.js (App Router) + Prisma + PostgreSQL RLS",
   "scripts": {
     "dev": "next dev",
+    "postinstall": "prisma generate",
     "build": "prisma generate && next build",
     "start": "next start",
     "lint": "next lint",

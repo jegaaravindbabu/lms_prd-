@@ -9,18 +9,30 @@ import {
   Star,
 } from "lucide-react";
 import { getTenant } from "@/lib/tenant";
-import { withTenant } from "@/lib/db";
+import { withTenant, prismaAdmin } from "@/lib/db";
 import { Logo } from "@/components/brand/logo";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { formatMoney } from "@/lib/utils";
 import { PlatformLanding } from "./_platform-landing";
+import { DemoHome, type DemoSchool } from "./_demo-home";
 
 export default async function Home() {
   const tenant = await getTenant();
 
-  // No tenant on this host -> platform marketing page (you selling the LMS).
-  if (!tenant) return <PlatformLanding />;
+  // No tenant on this host. In demo mode show a school switcher; otherwise the
+  // platform marketing page.
+  if (!tenant) {
+    if (process.env.NEXT_PUBLIC_DEMO === "1") {
+      const schools = (await prismaAdmin.tenant.findMany({
+        where: { status: "ACTIVE" },
+        orderBy: { createdAt: "asc" },
+        select: { name: true, subdomain: true, logoUrl: true, primaryColor: true },
+      })) as DemoSchool[];
+      return <DemoHome schools={schools} />;
+    }
+    return <PlatformLanding />;
+  }
 
   // Suspended / cancelled schools are blocked.
   if (tenant.status !== "ACTIVE") redirect("/not-active");

@@ -10,7 +10,7 @@
 // ============================================================================
 
 import { cache } from "react";
-import { headers } from "next/headers";
+import { headers, cookies } from "next/headers";
 import { prismaAdmin } from "@/lib/db";
 
 const ROOT_DOMAIN = (process.env.NEXT_PUBLIC_ROOT_DOMAIN ?? "lvh.me:3000")
@@ -44,10 +44,17 @@ export function subdomainFromHost(host: string): string | null {
 
 async function lookup(host: string): Promise<ResolvedTenant | null> {
   const sub = subdomainFromHost(host);
-  // A custom domain only routes once its ownership is verified (ACTIVE).
+
+  // Demo mode: on a bare host (no subdomain), a `demo_tenant` cookie picks the
+  // school, so the whole platform is demoable from one URL with a switcher.
+  const demoCookie = !sub ? cookies().get("demo_tenant")?.value : undefined;
+
   const where = sub
     ? { subdomain: sub }
-    : { customDomain: host.split(":")[0].toLowerCase(), domainStatus: "ACTIVE" as const };
+    : demoCookie
+      ? { subdomain: demoCookie }
+      // A custom domain only routes once its ownership is verified (ACTIVE).
+      : { customDomain: host.split(":")[0].toLowerCase(), domainStatus: "ACTIVE" as const };
 
   const tenant = await prismaAdmin.tenant.findFirst({
     where,

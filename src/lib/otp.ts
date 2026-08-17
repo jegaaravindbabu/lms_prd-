@@ -27,7 +27,7 @@ function generateCode(): string {
 
 async function deliver(phone: string, code: string) {
   const mode = process.env.OTP_MODE ?? "console";
-  if (mode === "console") {
+  if (mode === "console" || mode === "demo") {
     console.log(`\n📲  OTP for ${phone}: ${code}  (valid 5 min)\n`);
     return;
   }
@@ -35,12 +35,15 @@ async function deliver(phone: string, code: string) {
   throw new Error(`OTP_MODE "${mode}" not implemented — add an SMS provider.`);
 }
 
-/** Create + send an OTP challenge for a phone number within a tenant context. */
+/**
+ * Create + send an OTP challenge. Returns the code so callers can surface it
+ * on-screen in demo mode (OTP_MODE=demo) — never do this with real SMS.
+ */
 export async function requestOtp(
   phone: string,
   purpose: "LOGIN" | "SIGNUP" = "LOGIN",
   tenantId?: string | null
-) {
+): Promise<{ demoCode?: string }> {
   const code = generateCode();
   await prismaAdmin.otpChallenge.create({
     data: {
@@ -52,6 +55,7 @@ export async function requestOtp(
     },
   });
   await deliver(phone, code);
+  return process.env.OTP_MODE === "demo" ? { demoCode: code } : {};
 }
 
 /** Verify the latest active OTP challenge for a phone. Returns true on success. */

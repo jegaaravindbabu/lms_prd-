@@ -32,6 +32,14 @@ export default async function RootLayout({ children }: { children: React.ReactNo
         style={brandVars(tenant)}
       >
         {children}
+        {process.env.NEXT_PUBLIC_DEMO === "1" && tenant && (
+          <a
+            href="/api/demo/switch?clear=1"
+            className="fixed bottom-4 left-4 z-50 inline-flex items-center gap-2 rounded-full border border-white/12 bg-black/60 px-4 py-2 text-xs text-white/80 shadow-luxe backdrop-blur-md transition-colors hover:text-white"
+          >
+            ⇄ Switch school
+          </a>
+        )}
       </body>
     </html>
   );
