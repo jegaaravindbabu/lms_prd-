@@ -1,0 +1,609 @@
+// ============================================================================
+//  White-Label Multi-Tenant LMS — Prisma schema
+// ----------------------------------------------------------------------------
+//  Model summary of the decisions we locked in:
+//   • Multi-tenant: every tenant-scoped row carries `tenantId`; Postgres RLS
+//     (see rls.sql) is the hard isolation boundary.
+//   • Users are GLOBAL (one phone = one User). Access to a school is granted
+//     per-tenant through `Membership`, so being in School A never leaks into
+//     School B.
+//   • Each tenant plugs in their OWN payment gateway (GatewayCredential,
+//     encrypted). Students pay the client directly — `Payment` is the client's
+//     record and has NO platform fee.
+//   • Video is EMBEDDED (YouTube/Vimeo), never hosted. A Lesson stores only
+//     provider + videoId + isPreview.
+//   • Your revenue lives in `ClientLicense` (one-time fee + AMC tier).
+// ============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  // Admin (BYPASSRLS) connection for prisma db push / migrate + seed.
+  directUrl = env("DATABASE_ADMIN_URL")
+}
+
+// ---------------------------------------------------------------------------
+//  ENUMS
+// ---------------------------------------------------------------------------
+
+enum Role {
+  OWNER        // the school owner (your client)
+  ADMIN        // staff admin within a school
+  INSTRUCTOR   // faculty
+  STUDENT
+  SUPPORT      // doubt-solver / support agent
+}
+
+enum TenantStatus {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  CANCELLED
+}
+
+enum DomainStatus {
+  PENDING
+  VERIFYING
+  ACTIVE
+  ERROR
+}
+
+enum LicenseStatus {
+  ACTIVE
+  PAST_DUE
+  SUSPENDED
+  CANCELLED
+}
+
+enum AmcTier {
+  STARTER
+  GROWTH
+  INSTITUTE
+}
+
+enum PaymentGateway {
+  RAZORPAY
+  CASHFREE
+  STRIPE
+}
+
+enum CourseStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum LessonType {
+  VIDEO
+  PDF
+  TEXT
+  QUIZ
+}
+
+enum VideoProvider {
+  YOUTUBE   // used for FREE preview lessons (unlisted)
+  VIMEO     // used for PAID lessons (domain-restricted)
+}
+
+enum EnrollmentStatus {
+  ACTIVE
+  EXPIRED
+  REFUNDED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  CREATED
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum DiscountType {
+  PERCENT
+  FIXED
+}
+
+enum QuestionType {
+  SINGLE
+  MULTIPLE
+  NUMERIC
+  TRUE_FALSE
+}
+
+enum OtpPurpose {
+  LOGIN
+  SIGNUP
+}
+
+// ---------------------------------------------------------------------------
+//  PLATFORM / TENANT LAYER
+// ---------------------------------------------------------------------------
+
+/// A "school" — one white-labeled client instance.
+model Tenant {
+  id                     String       @id @default(cuid())
+  name                   String
+  subdomain              String       @unique
+  customDomain           String?      @unique
+  customDomainToken      String?      // ownership-verification token
+  domainStatus           DomainStatus @default(PENDING)
+
+  // Branding (the white-label promise)
+  logoUrl                String?
+  faviconUrl             String?
+  heroUrl                String?
+  primaryColor           String?      @default("#4F46E5")
+  secondaryColor         String?
+  emailFromName          String?
+
+  status                 TenantStatus @default(PENDING)
+
+  ownerId                String
+  owner                  User         @relation("TenantOwner", fields: [ownerId], references: [id])
+
+  license                ClientLicense?
+  memberships            Membership[]
+  gatewayCredentials     GatewayCredential[]
+  usageMeters            UsageMeter[]
+  courses                Course[]
+  enrollments            Enrollment[]
+  payments               Payment[]
+  coupons                Coupon[]
+  tests                  Test[]
+  questions              Question[]
+  attempts               Attempt[]
+
+  createdAt              DateTime     @default(now())
+  updatedAt              DateTime     @updatedAt
+
+  @@index([ownerId])
+}
+
+/// Your revenue from the client: one-time license + annual AMC. Not a share of
+/// their course sales.
+model ClientLicense {
+  id            String        @id @default(cuid())
+  tenantId      String        @unique
+  tenant        Tenant        @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  oneTimeFee    Decimal       @db.Decimal(12, 2) @default(0)
+  amcTier       AmcTier       @default(STARTER)
+  amcAmount     Decimal       @db.Decimal(12, 2) @default(0)
+  amcCurrency   String        @default("INR")
+  amcStartedAt  DateTime?
+  amcNextDueAt  DateTime?
+
+  // Tier caps — used to decide when a client should move up a tier.
+  capStudents   Int?
+  capStorageMb  Int?
+
+  status        LicenseStatus @default(ACTIVE)
+
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+}
+
+/// The client's OWN payment gateway keys. Store values ENCRYPTED at rest
+/// (encrypt in the app before persisting; never log these).
+model GatewayCredential {
+  id              String         @id @default(cuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  provider        PaymentGateway
+  keyId           String         // encrypted
+  keySecretEnc    String         // encrypted
+  webhookSecretEnc String?       // encrypted
+  isLive          Boolean        @default(false)
+  active          Boolean        @default(true)
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([tenantId, provider])
+  @@index([tenantId])
+}
+
+/// Per-period usage — drives AMC tiering and capacity planning.
+model UsageMeter {
+  id             String   @id @default(cuid())
+  tenantId       String
+  tenant         Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  period         String   // e.g. "2026-08"
+  activeStudents Int      @default(0)
+  storageMb      Int      @default(0)
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([tenantId, period])
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+//  IDENTITY & AUTH
+// ---------------------------------------------------------------------------
+
+/// GLOBAL identity. One phone number = one User across the whole platform.
+/// School access is granted per-tenant via Membership. NOT tenant-scoped.
+model User {
+  id                 String        @id @default(cuid())
+  phone              String        @unique
+  phoneVerified      Boolean       @default(false)
+  name               String?
+  email              String?       @unique
+  emailVerified      Boolean       @default(false)
+  avatarUrl          String?
+  language           String        @default("en")
+  isPlatformAdmin    Boolean       @default(false) // that's you
+
+  ownedTenants       Tenant[]      @relation("TenantOwner")
+  memberships        Membership[]
+  enrollments        Enrollment[]
+  payments           Payment[]
+  progress           Progress[]
+  attempts           Attempt[]
+  devices            Device[]
+  refreshTokens      RefreshToken[]
+  coursesInstructing Course[]      @relation("CourseInstructor")
+
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+}
+
+/// Which role a user holds inside a specific school. This is the row that
+/// scopes a person to a tenant.
+model Membership {
+  id        String   @id @default(cuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role      Role     @default(STUDENT)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, tenantId])
+  @@index([tenantId])
+}
+
+// Auth/session tables below are scoped at the APPLICATION layer (always looked
+// up by exact key + token hash), so they are intentionally left OUT of RLS to
+// avoid a chicken-and-egg during login. See rls.sql.
+
+model OtpChallenge {
+  id        String     @id @default(cuid())
+  tenantId  String?    // school context (from the domain)
+  phone     String
+  codeHash  String
+  purpose   OtpPurpose @default(LOGIN)
+  attempts  Int        @default(0)
+  expiresAt DateTime
+  consumedAt DateTime?
+  createdAt DateTime   @default(now())
+
+  @@index([phone])
+  @@index([tenantId])
+}
+
+model RefreshToken {
+  id         String    @id @default(cuid())
+  tenantId   String
+  userId     String
+  user       User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash  String    @unique
+  deviceId   String?
+  expiresAt  DateTime
+  revokedAt  DateTime?
+  createdAt  DateTime  @default(now())
+
+  @@index([userId])
+  @@index([tenantId])
+}
+
+model Device {
+  id         String   @id @default(cuid())
+  tenantId   String
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deviceHash String
+  label      String?
+  lastSeenAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  @@unique([userId, tenantId, deviceHash])
+  @@index([tenantId])
+}
+
+// ---------------------------------------------------------------------------
+//  CONTENT
+// ---------------------------------------------------------------------------
+
+model Course {
+  id           String       @id @default(cuid())
+  tenantId     String
+  tenant       Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  title        String
+  slug         String
+  subtitle     String?
+  description  String?
+  thumbnailUrl String?
+  price        Decimal      @db.Decimal(10, 2) @default(0)
+  currency     String       @default("INR")
+  isFree       Boolean      @default(false)
+  status       CourseStatus @default(DRAFT)
+
+  instructorId String?
+  instructor   User?        @relation("CourseInstructor", fields: [instructorId], references: [id])
+
+  sections     Section[]
+  enrollments  Enrollment[]
+  payments     Payment[]
+  coupons      Coupon[]
+  tests        Test[]
+
+  publishedAt  DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@unique([tenantId, slug])
+  @@index([tenantId])
+}
+
+model Section {
+  id       String   @id @default(cuid())
+  tenantId String   // denormalized for RLS
+  courseId String
+  course   Course   @relation(fields: [courseId], references: [id], onDelete: Cascade)
+  title    String
+  order    Int      @default(0)
+  lessons  Lesson[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([tenantId])
+  @@index([courseId])
+}
+
+model Lesson {
+  id            String         @id @default(cuid())
+  tenantId      String         // denormalized for RLS
+  courseId      String         // denormalized for quick access-checks
+  sectionId     String
+  section       Section        @relation(fields: [sectionId], references: [id], onDelete: Cascade)
+
+  title         String
+  order         Int            @default(0)
+  type          LessonType     @default(VIDEO)
+  isPreview     Boolean        @default(false) // free-preview gate
+
+  // Embedded video (no self-hosting)
+  videoProvider VideoProvider?
+  videoId       String?        // YouTube/Vimeo id
+  durationSec   Int?
+
+  // For PDF / TEXT lessons
+  contentUrl    String?
+  textContent   String?
+
+  progress      Progress[]
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([tenantId])
+  @@index([courseId])
+  @@index([sectionId])
+}
+
+// ---------------------------------------------------------------------------
+//  COMMERCE
+// ---------------------------------------------------------------------------
+
+model Enrollment {
+  id         String           @id @default(cuid())
+  tenantId   String
+  tenant     Tenant           @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  courseId   String
+  course     Course           @relation(fields: [courseId], references: [id], onDelete: Cascade)
+
+  status     EnrollmentStatus @default(ACTIVE)
+  source     String?          // "purchase" | "coupon" | "manual"
+  validTill  DateTime?        // null = lifetime
+  enrolledAt DateTime         @default(now())
+
+  @@unique([tenantId, userId, courseId])
+  @@index([tenantId])
+  @@index([userId])
+}
+
+/// The CLIENT's payment record. Money settles to the client's own gateway;
+/// there is no platform fee here by design.
+model Payment {
+  id              String         @id @default(cuid())
+  tenantId        String
+  tenant          Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  courseId        String
+  course          Course         @relation(fields: [courseId], references: [id])
+
+  amount          Decimal        @db.Decimal(10, 2)
+  currency        String         @default("INR")
+  gateway         PaymentGateway
+  gatewayOrderId  String
+  gatewayPaymentId String?
+  status          PaymentStatus  @default(CREATED)
+
+  couponId        String?
+  coupon          Coupon?        @relation(fields: [couponId], references: [id])
+
+  invoiceUrl      String?
+  paidAt          DateTime?
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  @@unique([tenantId, gatewayOrderId])
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model Coupon {
+  id             String       @id @default(cuid())
+  tenantId       String
+  tenant         Tenant       @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  code           String
+  discountType   DiscountType @default(PERCENT)
+  discountValue  Decimal      @db.Decimal(10, 2)
+  courseId       String?      // null = applies to any course in the school
+  course         Course?      @relation(fields: [courseId], references: [id])
+  maxRedemptions Int?
+  timesRedeemed  Int          @default(0)
+  active         Boolean      @default(true)
+  validFrom      DateTime?
+  validTill      DateTime?
+
+  payments       Payment[]
+
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([tenantId, code])
+  @@index([tenantId])
+}
+
+model Progress {
+  id             String   @id @default(cuid())
+  tenantId       String   // denormalized for RLS
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lessonId       String
+  lesson         Lesson   @relation(fields: [lessonId], references: [id], onDelete: Cascade)
+
+  watchedSeconds Int      @default(0)
+  lastPositionSec Int     @default(0)
+  completed      Boolean  @default(false)
+
+  updatedAt      DateTime @updatedAt
+  createdAt      DateTime @default(now())
+
+  @@unique([tenantId, userId, lessonId])
+  @@index([tenantId])
+  @@index([userId])
+}
+
+// ---------------------------------------------------------------------------
+//  ASSESSMENT (optional — for the exam-prep audience; drop if unused)
+// ---------------------------------------------------------------------------
+
+model Test {
+  id               String         @id @default(cuid())
+  tenantId         String
+  tenant           Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  courseId         String?
+  course           Course?        @relation(fields: [courseId], references: [id])
+
+  title            String
+  durationSec      Int
+  totalMarks       Int            @default(0)
+  negativeMarking  Boolean        @default(false)
+  startsAt         DateTime?
+
+  testQuestions    TestQuestion[]
+  attempts         Attempt[]
+
+  createdAt        DateTime       @default(now())
+  updatedAt        DateTime       @updatedAt
+
+  @@index([tenantId])
+}
+
+model Question {
+  id            String         @id @default(cuid())
+  tenantId      String
+  tenant        Tenant         @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+
+  subject       String?
+  chapter       String?
+  type          QuestionType   @default(SINGLE)
+  body          String
+  options       Json?          // [{id, text}]
+  correctAnswer Json           // e.g. ["a"] or {"value": 42}
+  marks         Int            @default(1)
+  negativeMarks Decimal        @db.Decimal(4, 2) @default(0)
+  difficulty    Int?           // 1–5
+  isPyq         Boolean        @default(false)
+  year          Int?
+
+  testQuestions TestQuestion[]
+  responses     Response[]
+
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@index([tenantId])
+}
+
+model TestQuestion {
+  id         String   @id @default(cuid())
+  tenantId   String   // denormalized for RLS
+  testId     String
+  test       Test     @relation(fields: [testId], references: [id], onDelete: Cascade)
+  questionId String
+  question   Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  section    String?
+  order      Int      @default(0)
+
+  @@unique([testId, questionId])
+  @@index([tenantId])
+}
+
+model Attempt {
+  id          String     @id @default(cuid())
+  tenantId    String
+  tenant      Tenant     @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  testId      String
+  test        Test       @relation(fields: [testId], references: [id], onDelete: Cascade)
+  userId      String
+  user        User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  startedAt   DateTime   @default(now())
+  submittedAt DateTime?
+  score       Decimal?   @db.Decimal(8, 2)
+  rank        Int?
+  percentile  Decimal?   @db.Decimal(5, 2)
+
+  responses   Response[]
+
+  @@index([tenantId])
+  @@index([userId])
+}
+
+model Response {
+  id          String   @id @default(cuid())
+  tenantId    String   // denormalized for RLS
+  attemptId   String
+  attempt     Attempt  @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+  questionId  String
+  question    Question @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  chosen      Json?
+  timeSpentSec Int     @default(0)
+  isCorrect   Boolean?
+
+  @@index([tenantId])
+  @@index([attemptId])
+}

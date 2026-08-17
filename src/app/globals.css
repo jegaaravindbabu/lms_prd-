@@ -1,0 +1,157 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ==========================================================================
+   Luxe design system — a dark, "expensive" default theme.
+   Semantic tokens are HSL channel triples so per-tenant branding can override
+   --brand / --primary at render time (see lib/branding.ts).
+   ========================================================================== */
+
+@layer base {
+  :root {
+    --background: 240 24% 4%;      /* obsidian */
+    --foreground: 40 30% 96%;      /* warm ivory */
+
+    --card: 240 20% 7%;
+    --card-foreground: 40 30% 96%;
+
+    --muted: 240 12% 14%;
+    --muted-foreground: 240 8% 62%;
+
+    --accent: 240 14% 12%;
+    --accent-foreground: 40 30% 96%;
+
+    --secondary: 240 12% 16%;
+    --secondary-foreground: 40 30% 96%;
+
+    --border: 240 14% 16%;
+    --input: 240 14% 18%;
+
+    /* Brand — overridden per-tenant. Default: indigo #4F46E5. */
+    --brand: 243 75% 59%;
+    --brand-foreground: 0 0% 100%;
+    --brand-soft: 243 75% 59%;
+    --primary: 243 75% 59%;
+    --primary-foreground: 0 0% 100%;
+    --ring: 243 75% 59%;
+
+    --gold: 41 46% 58%;            /* restrained champagne-gold hairline accent */
+
+    --radius: 0.9rem;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-feature-settings: "ss01", "cv01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  ::selection {
+    background: hsl(var(--brand) / 0.28);
+  }
+}
+
+@layer components {
+  /* Ambient page background: layered radial glows + a whisper of grain. */
+  .luxe-bg {
+    background-color: hsl(var(--background));
+    background-image:
+      radial-gradient(60rem 60rem at 15% -10%, hsl(var(--brand) / 0.16), transparent 60%),
+      radial-gradient(50rem 50rem at 100% 0%, hsl(var(--gold) / 0.08), transparent 55%),
+      radial-gradient(70rem 40rem at 50% 120%, hsl(var(--brand) / 0.10), transparent 60%);
+  }
+
+  .grain::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image: theme("backgroundImage.grain");
+    opacity: 0.04;
+    mix-blend-mode: overlay;
+  }
+
+  /* Glass surface — the signature "expensive" card. */
+  .glass {
+    background: linear-gradient(
+      180deg,
+      hsl(240 20% 10% / 0.72),
+      hsl(240 24% 6% / 0.72)
+    );
+    backdrop-filter: blur(20px) saturate(140%);
+    -webkit-backdrop-filter: blur(20px) saturate(140%);
+    border: 1px solid hsl(0 0% 100% / 0.08);
+    box-shadow:
+      0 1px 0 0 hsl(0 0% 100% / 0.06) inset,
+      0 30px 80px -30px hsl(240 60% 2% / 0.8);
+  }
+
+  /* Hairline divider with a gold glint in the middle. */
+  .hairline {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(var(--gold) / 0.4),
+      transparent
+    );
+  }
+
+  /* Gradient display text. */
+  .text-luxe {
+    background: linear-gradient(180deg, hsl(40 30% 98%), hsl(40 12% 72%));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  .text-brand-gradient {
+    background: linear-gradient(120deg, hsl(var(--brand)), hsl(var(--gold)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+
+  /* Thin uppercase eyebrow label. */
+  .eyebrow {
+    @apply inline-flex items-center gap-2 text-[0.7rem] font-medium uppercase tracking-[0.22em] text-muted-foreground;
+  }
+
+  /* Subtle animated sheen for premium buttons. */
+  .sheen {
+    position: relative;
+    overflow: hidden;
+  }
+  .sheen::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    transform: translateX(-100%);
+    background: linear-gradient(
+      90deg,
+      transparent,
+      hsl(0 0% 100% / 0.14),
+      transparent
+    );
+  }
+  .sheen:hover::before {
+    animation: shimmer 0.9s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+}
+
+/* Refined scrollbar. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: hsl(240 10% 22%);
+  border-radius: 999px;
+  border: 3px solid transparent;
+  background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: hsl(240 10% 30%); background-clip: content-box; }
