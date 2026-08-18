@@ -155,3 +155,11 @@
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover { background: hsl(240 10% 30%); background-clip: content-box; }
+
+/* Native <select> dropdown options: readable on the dark theme (the OS
+   otherwise renders them light-on-white). */
+select option,
+select optgroup {
+  background-color: #17181f;
+  color: #f2f0f7;
+}
