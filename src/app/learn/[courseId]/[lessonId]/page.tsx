@@ -103,8 +103,8 @@ export default async function LearnLessonPage({
           ) : current.type === "PDF" && current.contentUrl ? (
             <div className="glass rounded-2xl p-8 text-center">
               <FileText className="mx-auto size-10 text-brand" />
-              <p className="mt-4 text-muted-foreground">This lesson is a PDF resource.</p>
-              <Button asChild className="mt-5"><a href={current.contentUrl} target="_blank" rel="noreferrer"><Download className="size-4" /> Open PDF</a></Button>
+              <p className="mt-4 text-muted-foreground">This lesson is a downloadable resource (PDF or document).</p>
+              <Button asChild className="mt-5"><a href={current.contentUrl} target="_blank" rel="noreferrer"><Download className="size-4" /> Open / download</a></Button>
             </div>
           ) : current.type === "TEXT" ? (
             <div className="glass rounded-2xl p-8">

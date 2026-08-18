@@ -9,6 +9,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { uploadLessonFile } from "@/lib/upload";
 import { Badge } from "@/components/ui/badge";
 import {
   createSection, renameSection, deleteSection, moveSection,
@@ -202,6 +203,25 @@ function LessonForm({
   const [videoId, setVideoId] = useState(lesson?.videoId ?? "");
   const [durationMin, setDurationMin] = useState(lesson?.durationSec ? String(Math.round(lesson.durationSec / 60)) : "");
   const [contentUrl, setContentUrl] = useState(lesson?.contentUrl ?? "");
+  const [uploading, setUploading] = useState(false);
+  const [uploadName, setUploadName] = useState<string | null>(lesson?.contentUrl ? "Current file attached" : null);
+  const [uploadErr, setUploadErr] = useState<string | null>(null);
+
+  async function onPickFile(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadErr(null);
+    setUploading(true);
+    try {
+      const url = await uploadLessonFile(file);
+      setContentUrl(url);
+      setUploadName(file.name);
+    } catch (err) {
+      setUploadErr(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setUploading(false);
+    }
+  }
   const [textContent, setTextContent] = useState(lesson?.textContent ?? "");
   const [error, setError] = useState<string | null>(null);
 
@@ -239,7 +259,7 @@ function LessonForm({
             className="h-10 rounded-xl border border-white/10 bg-white/[0.03] px-3 text-sm text-foreground focus-visible:border-brand/60 focus-visible:outline-none"
           >
             <option value="VIDEO">Video</option>
-            <option value="PDF">PDF</option>
+            <option value="PDF">PDF / Document</option>
             <option value="TEXT">Text</option>
             <option value="QUIZ">Quiz</option>
           </select>
@@ -260,8 +280,8 @@ function LessonForm({
             </select>
           </div>
           <div className="space-y-1.5">
-            <Label>Video ID</Label>
-            <Input value={videoId} onChange={(e) => setVideoId(e.target.value)} placeholder={provider === "YOUTUBE" ? "dQw4w9WgXcQ" : "76979871"} className="h-10" />
+            <Label>YouTube / Vimeo link (or ID)</Label>
+            <Input value={videoId} onChange={(e) => setVideoId(e.target.value)} placeholder="Paste a YouTube or Vimeo link" className="h-10" />
           </div>
           <div className="space-y-1.5">
             <Label>Duration (min)</Label>
@@ -271,9 +291,26 @@ function LessonForm({
       )}
 
       {type === "PDF" && (
-        <div className="mt-3 space-y-1.5">
-          <Label>PDF URL</Label>
-          <Input value={contentUrl} onChange={(e) => setContentUrl(e.target.value)} placeholder="https://…/notes.pdf" className="h-10" />
+        <div className="mt-3 space-y-3">
+          <div className="space-y-1.5">
+            <Label>Upload a file (PDF or Word)</Label>
+            <div className="flex items-center gap-3">
+              <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-white/12 bg-white/[0.03] px-4 text-sm text-foreground transition-colors hover:border-brand/40">
+                {uploading ? <Loader2 className="size-4 animate-spin" /> : <Plus className="size-4" />}
+                {uploading ? "Uploading…" : "Choose file"}
+                <input type="file" accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document" className="hidden" onChange={onPickFile} disabled={uploading} />
+              </label>
+              {uploadName && !uploadErr && (
+                <span className="inline-flex items-center gap-1.5 truncate text-xs text-gold"><Check className="size-3.5" /> {uploadName}</span>
+              )}
+            </div>
+            {uploadErr && <p className="text-xs text-red-400">{uploadErr}</p>}
+            <p className="text-[0.7rem] text-muted-foreground">PDF, DOC or DOCX · up to 50 MB.</p>
+          </div>
+          <div className="space-y-1.5">
+            <Label>…or paste a link</Label>
+            <Input value={contentUrl} onChange={(e) => { setContentUrl(e.target.value); setUploadName(e.target.value ? "Link set" : null); }} placeholder="https://…/notes.pdf" className="h-10" />
+          </div>
         </div>
       )}
 

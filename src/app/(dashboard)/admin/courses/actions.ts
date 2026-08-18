@@ -179,14 +179,35 @@ export type LessonInput = {
   textContent?: string | null;
 };
 
+/** Pull the bare video id out of a pasted YouTube/Vimeo link (or accept an id). */
+function extractVideoId(provider: "YOUTUBE" | "VIMEO", raw: string): string {
+  const s = (raw || "").trim();
+  if (!s) return "";
+  if (provider === "VIMEO") {
+    const m = s.match(/vimeo\.com\/(?:video\/)?(\d+)/) || s.match(/(\d{6,})/);
+    return m ? m[1] : s;
+  }
+  const y = s.match(/(?:youtu\.be\/|[?&]v=|\/embed\/|\/shorts\/|\/live\/)([A-Za-z0-9_-]{11})/);
+  return y ? y[1] : s;
+}
+
 function normalizeLesson(input: LessonInput) {
   const isVideo = input.type === "VIDEO";
+
+  // Auto-detect provider from a pasted link, then extract the bare id, so an
+  // instructor can paste either a full YouTube/Vimeo URL or just the id.
+  const rawVideo = (input.videoId ?? "").trim();
+  let provider: "YOUTUBE" | "VIMEO" = (input.videoProvider as "YOUTUBE" | "VIMEO") ?? "YOUTUBE";
+  if (/vimeo\.com/i.test(rawVideo)) provider = "VIMEO";
+  else if (/youtu\.?be/i.test(rawVideo)) provider = "YOUTUBE";
+  const videoId = isVideo ? extractVideoId(provider, rawVideo) : null;
+
   return {
     title: input.title.trim() || "Untitled lesson",
     type: input.type,
     isPreview: !!input.isPreview,
-    videoProvider: isVideo ? (input.videoProvider ?? "YOUTUBE") : null,
-    videoId: isVideo ? (input.videoId?.trim() || null) : null,
+    videoProvider: isVideo ? provider : null,
+    videoId: isVideo ? (videoId || null) : null,
     durationSec: input.durationMin ? Math.round(input.durationMin * 60) : null,
     contentUrl: input.type === "PDF" ? (input.contentUrl?.trim() || null) : null,
     textContent: input.type === "TEXT" ? (input.textContent ?? null) : null,
