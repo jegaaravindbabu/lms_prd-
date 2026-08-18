@@ -16,13 +16,16 @@
 // ============================================================================
 
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
+  // "native" for local dev; rhel-openssl-3.0.x is Vercel's serverless runtime.
+  binaryTargets = ["native", "rhel-openssl-3.0.x"]
 }
 
 datasource db {
   provider  = "postgresql"
   url       = env("DATABASE_URL")
-  // Admin (BYPASSRLS) connection for prisma db push / migrate + seed.
+  // Admin (BYPASSRLS) connection — used by `prisma migrate` / `prisma db push`
+  // and the seed. The app runtime uses `url`.
   directUrl = env("DATABASE_ADMIN_URL")
 }
 
