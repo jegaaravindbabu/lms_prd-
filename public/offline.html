@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>You're offline</title>
+<style>
+  :root{ --bg:#0b0b12; --card:#14151c; --line:rgba(255,255,255,.10); --muted:#93a0bb; }
+  *{box-sizing:border-box;margin:0;padding:0;}
+  html,body{height:100%;}
+  body{background:var(--bg);color:#f2f0f7;
+    font-family:-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    display:grid;place-items:center;padding:24px;-webkit-font-smoothing:antialiased;
+    background-image:radial-gradient(40rem 24rem at 50% -10%, rgba(79,70,229,.18), transparent 60%);}
+  .card{max-width:380px;text-align:center;}
+  .ic{width:76px;height:76px;border-radius:20px;margin:0 auto 22px;display:grid;place-items:center;
+    background:rgba(255,255,255,.05);border:1px solid var(--line);}
+  .ic svg{width:38px;height:38px;color:#c7d0e2;}
+  h1{font-size:23px;font-weight:700;letter-spacing:-.01em;}
+  p{color:var(--muted);font-size:15px;margin-top:12px;line-height:1.6;}
+  button{margin-top:26px;border:none;cursor:pointer;border-radius:999px;padding:14px 26px;
+    font-size:15px;font-weight:600;color:#fff;background:#4F46E5;
+    box-shadow:0 14px 30px -12px rgba(79,70,229,.7);transition:transform .15s,filter .15s;
+    font-family:inherit;}
+  button:hover{transform:translateY(-1px);filter:brightness(1.07);}
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="ic">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M2 8.8a15 15 0 0 1 20 0"/><path d="M5 12.5a10 10 0 0 1 14 0"/><path d="M8.5 16a5 5 0 0 1 7 0"/>
+        <line x1="2" y1="2" x2="22" y2="22"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/>
+      </svg>
+    </div>
+    <h1>You're offline</h1>
+    <p>We couldn't reach the internet. Your lessons and tests need a connection — reconnect and try again.</p>
+    <button onclick="location.reload()">Try again</button>
+  </div>
+  <script>
+    // Auto-retry the moment the connection returns.
+    window.addEventListener("online", function(){ location.reload(); });
+  </script>
+</body>
+</html>
