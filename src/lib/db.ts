@@ -17,15 +17,30 @@ const globalForPrisma = globalThis as unknown as {
   prismaAdmin?: PrismaClient;
 };
 
+// Force a sensible `connection_limit` onto a pooled URL, overriding whatever is
+// set in the environment. The app client runs interactive transactions, so it
+// needs a few connections (on the transaction pooler this is safe); the admin
+// client only does simple lookups on the session pooler, so it stays at 1 to
+// avoid exhausting the small session-mode client limit.
+function withConnLimit(url: string | undefined, limit: number): string | undefined {
+  if (!url) return url;
+  if (/[?&]connection_limit=\d+/.test(url)) {
+    return url.replace(/connection_limit=\d+/, `connection_limit=${limit}`);
+  }
+  return url + (url.includes("?") ? "&" : "?") + `connection_limit=${limit}`;
+}
+
 // App-facing client — connects as the RLS-subject role (DATABASE_URL -> app_user).
 // Every tenant query MUST go through `withTenant`.
-export const prisma = globalForPrisma.prisma ?? new PrismaClient();
+export const prisma =
+  globalForPrisma.prisma ??
+  new PrismaClient({ datasourceUrl: withConnLimit(process.env.DATABASE_URL, 5) });
 
 // Platform/admin + migrations — connects as the BYPASSRLS role.
 // NEVER expose this to tenant-facing request handlers.
 export const prismaAdmin =
   globalForPrisma.prismaAdmin ??
-  new PrismaClient({ datasourceUrl: process.env.DATABASE_ADMIN_URL });
+  new PrismaClient({ datasourceUrl: withConnLimit(process.env.DATABASE_ADMIN_URL, 1) });
 
 if (process.env.NODE_ENV !== "production") {
   globalForPrisma.prisma = prisma;
@@ -55,5 +70,10 @@ export async function withTenant<T>(
     // Parameterized + transaction-local. Do NOT interpolate tenantId into SQL.
     await tx.$executeRaw`SELECT set_config('app.current_tenant_id', ${tenantId}, true)`;
     return fn(tx);
+  }, {
+    // Give transactions room to acquire a pooled connection and to run over the
+    // transaction pooler's added latency, instead of failing fast (P2028).
+    maxWait: 10000,
+    timeout: 20000,
   });
 }
