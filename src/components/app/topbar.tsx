@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { LogOut } from "lucide-react";
 import { Logo } from "@/components/brand/logo";
 import { Badge } from "@/components/ui/badge";
 import { initials } from "@/lib/utils";
@@ -41,6 +42,14 @@ export function Topbar({
           <div className="grid size-10 place-items-center rounded-full bg-brand/15 text-sm font-medium text-brand ring-1 ring-inset ring-white/10">
             {initials(userName)}
           </div>
+          <a
+            href="/api/auth/logout"
+            aria-label="Sign out"
+            title="Sign out"
+            className="grid size-10 place-items-center rounded-full text-muted-foreground ring-1 ring-inset ring-white/10 transition-colors hover:bg-white/[0.05] hover:text-foreground"
+          >
+            <LogOut className="size-[18px]" />
+          </a>
         </div>
       </div>
     </header>
