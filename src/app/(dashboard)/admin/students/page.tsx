@@ -1,4 +1,4 @@
-import { Users, ShieldCheck, Phone, Mail } from "lucide-react";
+import { Users, ShieldCheck, Phone, Mail, Download } from "lucide-react";
 import { requireRole } from "@/lib/rbac";
 import { getTenant } from "@/lib/tenant";
 import { withTenant } from "@/lib/db";
@@ -55,7 +55,17 @@ export default async function StudentsPage() {
           <h1 className="mt-3 font-display text-4xl tracking-tight text-luxe">Students</h1>
           <p className="mt-2 text-muted-foreground">Everyone enrolled in your academy.</p>
         </div>
-        <Badge variant="muted"><Users className="size-3.5" /> {students.length} total</Badge>
+        <div className="flex items-center gap-3">
+          <Badge variant="muted"><Users className="size-3.5" /> {students.length} total</Badge>
+          {user.role === "OWNER" && students.length > 0 && (
+            <a
+              href="/api/admin/students/export"
+              className="inline-flex items-center gap-2 rounded-full bg-brand/15 px-4 py-2 text-sm font-medium text-brand ring-1 ring-inset ring-brand/25 transition-colors hover:bg-brand/25"
+            >
+              <Download className="size-4" /> Download Excel
+            </a>
+          )}
+        </div>
       </div>
 
       {students.length === 0 ? (
